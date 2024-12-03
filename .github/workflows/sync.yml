@@ -1,0 +1,58 @@
+name: Sync with Upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '10 * * * *'  # 毎時10分に実行
+
+jobs:
+  sync-upstream:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Set up Git
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+
+      - name: Backup sync workflow
+        run: |
+          mkdir -p /tmp/workflow-backup
+          cp .github/workflows/sync.yml /tmp/workflow-backup/
+
+      - name: Add upstream repository
+        run: |
+          git remote add upstream https://github.com/YTLitePlus/YTLitePlus.git
+
+      - name: Fetch upstream
+        run: |
+          git fetch upstream
+
+      - name: Reset to upstream
+        run: |
+          git reset --hard upstream/main
+
+      - name: Restore sync workflow
+        run: |
+          mkdir -p .github/workflows
+          cp /tmp/workflow-backup/sync.yml .github/workflows/
+          git add .github/workflows/sync.yml
+          git diff --staged --quiet || git commit -m "Restore sync workflow after upstream sync"
+
+      - name: Push to origin
+        run: |
+          git push --force origin main
+        continue-on-error: true
+
+      - name: Check push status
+        run: |
+          if [ $? -ne 0 ]; then
+            echo "Force push failed"
+            exit 1
+          fi

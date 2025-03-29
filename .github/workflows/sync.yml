@@ -1,0 +1,77 @@
+name: Sync with Upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '10 * * * *'  # 毎時10分に実行
+
+jobs:
+  delete-old-runs:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 0
+          delete_workflow_pattern: 'Sync with Upstream'
+
+  sync-upstream:
+    runs-on: ubuntu-latest
+    needs: delete-old-runs
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+          ref: main
+          token: ${{ secrets.WORKFLOW_TOKEN }}
+
+      - name: Set up Git
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+
+      - name: Backup sync workflow
+        run: |
+          mkdir -p /tmp/workflow-backup
+          cp .github/workflows/sync.yml /tmp/workflow-backup/
+
+      - name: Add upstream repository
+        run: |
+          git remote add upstream https://github.com/YTLitePlus/YTLitePlus.git
+
+      - name: Fetch upstream
+        run: |
+          git fetch upstream
+
+      - name: Reset to upstream
+        run: |
+          git reset --hard upstream/main
+
+      - name: Restore sync workflow
+        run: |
+          mkdir -p .github/workflows
+          cp /tmp/workflow-backup/sync.yml .github/workflows/
+          git add .github/workflows/sync.yml
+          git diff --staged --quiet || git commit -m "Restore sync workflow after upstream sync"
+
+      - name: Push to origin
+        run: |
+          git push --force origin main
+        continue-on-error: true
+
+      - name: Check push status
+        run: |
+          if [ $? -ne 0 ]; then
+            echo "Force push failed"
+            exit 1
+          fi
